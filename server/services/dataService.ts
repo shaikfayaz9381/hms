@@ -1,0 +1,781 @@
+import { prisma } from '../db.js';
+import {
+  initialUsers,
+  initialDepartments,
+  initialDoctors,
+  initialPatients,
+  initialMedicines,
+  initialRooms,
+  initialAppointments,
+  initialMedicalRecords,
+  initialPrescriptions,
+  initialBills,
+} from './seedData.js';
+
+// In-memory runtime state clone (used when Prisma connection to Supabase is not yet configured)
+let memoryStore: {
+  users: any[];
+  departments: any[];
+  doctors: any[];
+  patients: any[];
+  medicines: any[];
+  rooms: any[];
+  appointments: any[];
+  medicalRecords: any[];
+  prescriptions: any[];
+  bills: any[];
+  auditLogs: any[];
+} = {
+  users: [...initialUsers],
+  departments: [...initialDepartments],
+  doctors: [...initialDoctors],
+  patients: [...initialPatients],
+  medicines: [...initialMedicines],
+  rooms: [...initialRooms],
+  appointments: [...initialAppointments],
+  medicalRecords: [...initialMedicalRecords],
+  prescriptions: [...initialPrescriptions],
+  bills: [...initialBills],
+  auditLogs: [
+    {
+      id: 'log-1',
+      userId: 'user-admin',
+      action: 'SYSTEM_INITIALIZATION',
+      resource: 'System',
+      details: 'Demonstration hospital records initialized in memory.',
+      ipAddress: '127.0.0.1',
+      createdAt: new Date().toISOString(),
+    },
+  ],
+};
+
+let prismaAvailable = false;
+
+// Check if Prisma is currently connected
+export async function isPrismaConnected(): Promise<boolean> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl || dbUrl.includes('[YOUR-PASSWORD]') || dbUrl.includes('[YOUR-PROJECT-REF]')) {
+    prismaAvailable = false;
+    return false;
+  }
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    prismaAvailable = true;
+    return true;
+  } catch {
+    prismaAvailable = false;
+    return false;
+  }
+}
+
+export const dataService = {
+  // --- USERS & AUTH ---
+  async findUserByEmail(email: string) {
+    if (await isPrismaConnected()) {
+      return prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+        include: { doctor: true, patient: true },
+      });
+    }
+    const user = memoryStore.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) return null;
+    const doctor = memoryStore.doctors.find(d => d.userId === user.id);
+    const patient = memoryStore.patients.find(p => p.userId === user.id);
+    return { ...user, doctor, patient };
+  },
+
+  async findUserById(id: string) {
+    if (await isPrismaConnected()) {
+      return prisma.user.findUnique({
+        where: { id },
+        include: { doctor: true, patient: true },
+      });
+    }
+    const user = memoryStore.users.find(u => u.id === id);
+    if (!user) return null;
+    const doctor = memoryStore.doctors.find(d => d.userId === user.id);
+    const patient = memoryStore.patients.find(p => p.userId === user.id);
+    return { ...user, doctor, patient };
+  },
+
+  // --- PATIENTS ---
+  async getPatients(search?: string, gender?: string, bloodGroup?: string) {
+    if (await isPrismaConnected()) {
+      const where: any = {};
+      if (search) {
+        where.OR = [
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { lastName: { contains: search, mode: 'insensitive' } },
+          { medicalRecordNumber: { contains: search, mode: 'insensitive' } },
+          { contactNumber: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+      if (gender) where.gender = gender;
+      if (bloodGroup) where.bloodGroup = bloodGroup;
+      return prisma.patient.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { user: { select: { email: true } } },
+      });
+    }
+
+    let result = [...memoryStore.patients];
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        p =>
+          p.firstName.toLowerCase().includes(q) ||
+          p.lastName.toLowerCase().includes(q) ||
+          p.medicalRecordNumber.toLowerCase().includes(q) ||
+          p.contactNumber.includes(q)
+      );
+    }
+    if (gender) result = result.filter(p => p.gender === gender);
+    if (bloodGroup) result = result.filter(p => p.bloodGroup === bloodGroup);
+    return result;
+  },
+
+  async getPatientById(id: string) {
+    if (await isPrismaConnected()) {
+      return prisma.patient.findUnique({
+        where: { id },
+        include: {
+          user: true,
+          appointments: { include: { doctor: { include: { user: true, department: true } } } },
+          medicalRecords: { include: { doctor: { include: { user: true } } } },
+          prescriptions: { include: { doctor: { include: { user: true } }, items: { include: { medicine: true } } } },
+          bills: { include: { items: true } },
+        },
+      });
+    }
+    const patient = memoryStore.patients.find(p => p.id === id);
+    if (!patient) return null;
+    const apts = memoryStore.appointments
+      .filter(a => a.patientId === id)
+      .map(a => {
+        const doc = memoryStore.doctors.find(d => d.id === a.doctorId);
+        const docUser = doc ? memoryStore.users.find(u => u.id === doc.userId) : null;
+        const dept = doc ? memoryStore.departments.find(dp => dp.id === doc.departmentId) : null;
+        return { ...a, doctor: { ...doc, user: docUser, department: dept } };
+      });
+    const records = memoryStore.medicalRecords
+      .filter(r => r.patientId === id)
+      .map(r => {
+        const doc = memoryStore.doctors.find(d => d.id === r.doctorId);
+        const docUser = doc ? memoryStore.users.find(u => u.id === doc.userId) : null;
+        return { ...r, doctor: { ...doc, user: docUser } };
+      });
+    const prescriptions = memoryStore.prescriptions
+      .filter(px => px.patientId === id)
+      .map(px => {
+        const doc = memoryStore.doctors.find(d => d.id === px.doctorId);
+        const docUser = doc ? memoryStore.users.find(u => u.id === doc.userId) : null;
+        const items = px.items.map((item: any) => ({
+          ...item,
+          medicine: memoryStore.medicines.find(m => m.id === item.medicineId),
+        }));
+        return { ...px, doctor: { ...doc, user: docUser }, items };
+      });
+    const bills = memoryStore.bills.filter(b => b.patientId === id);
+    return { ...patient, appointments: apts, medicalRecords: records, prescriptions, bills };
+  },
+
+  async createPatient(data: any) {
+    const nextMRN = `MRN-2026-${String(memoryStore.patients.length + 1).padStart(4, '0')}`;
+    const patientData = {
+      ...data,
+      medicalRecordNumber: data.medicalRecordNumber || nextMRN,
+    };
+
+    if (await isPrismaConnected()) {
+      return prisma.patient.create({ data: patientData });
+    }
+
+    const newPatient = {
+      id: `pat-${Date.now()}`,
+      userId: data.userId || null,
+      medicalRecordNumber: patientData.medicalRecordNumber,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      dateOfBirth: data.dateOfBirth,
+      gender: data.gender,
+      bloodGroup: data.bloodGroup || null,
+      contactNumber: data.contactNumber,
+      emergencyContact: data.emergencyContact || null,
+      address: data.address || null,
+      allergies: data.allergies || null,
+      chronicConditions: data.chronicConditions || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    memoryStore.patients.unshift(newPatient);
+    return newPatient;
+  },
+
+  async updatePatient(id: string, data: any) {
+    if (await isPrismaConnected()) {
+      return prisma.patient.update({ where: { id }, data });
+    }
+    const idx = memoryStore.patients.findIndex(p => p.id === id);
+    if (idx === -1) return null;
+    memoryStore.patients[idx] = { ...memoryStore.patients[idx], ...data, updatedAt: new Date().toISOString() };
+    return memoryStore.patients[idx];
+  },
+
+  // --- DOCTORS & DEPARTMENTS ---
+  async getDoctors(departmentId?: string) {
+    if (await isPrismaConnected()) {
+      const where = departmentId ? { departmentId } : {};
+      return prisma.doctor.findMany({
+        where,
+        include: { user: true, department: true },
+      });
+    }
+    let docs = [...memoryStore.doctors];
+    if (departmentId) docs = docs.filter(d => d.departmentId === departmentId);
+    return docs.map(d => ({
+      ...d,
+      user: memoryStore.users.find(u => u.id === d.userId),
+      department: memoryStore.departments.find(dep => dep.id === d.departmentId),
+    }));
+  },
+
+  async getDepartments() {
+    if (await isPrismaConnected()) {
+      return prisma.department.findMany({
+        include: { _count: { select: { doctors: true, rooms: true } } },
+      });
+    }
+    return memoryStore.departments.map(d => ({
+      ...d,
+      _count: {
+        doctors: memoryStore.doctors.filter(doc => doc.departmentId === d.id).length,
+        rooms: memoryStore.rooms.filter(rm => rm.departmentId === d.id).length,
+      },
+    }));
+  },
+
+  // --- APPOINTMENTS ---
+  async getAppointments(filters: { doctorId?: string; patientId?: string; status?: string; date?: string }) {
+    if (await isPrismaConnected()) {
+      const where: any = {};
+      if (filters.doctorId) where.doctorId = filters.doctorId;
+      if (filters.patientId) where.patientId = filters.patientId;
+      if (filters.status) where.status = filters.status;
+      if (filters.date) {
+        const start = new Date(filters.date);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(filters.date);
+        end.setHours(23, 59, 59, 999);
+        where.scheduledAt = { gte: start, lte: end };
+      }
+      return prisma.appointment.findMany({
+        where,
+        include: {
+          patient: true,
+          doctor: { include: { user: true, department: true } },
+          medicalRecord: true,
+        },
+        orderBy: { scheduledAt: 'asc' },
+      });
+    }
+
+    let apts = [...memoryStore.appointments];
+    if (filters.doctorId) apts = apts.filter(a => a.doctorId === filters.doctorId);
+    if (filters.patientId) apts = apts.filter(a => a.patientId === filters.patientId);
+    if (filters.status) apts = apts.filter(a => a.status === filters.status);
+    if (filters.date) {
+      const targetDateStr = filters.date.slice(0, 10);
+      apts = apts.filter(a => a.scheduledAt.slice(0, 10) === targetDateStr);
+    }
+    return apts.map(a => {
+      const patient = memoryStore.patients.find(p => p.id === a.patientId);
+      const doctor = memoryStore.doctors.find(d => d.id === a.doctorId);
+      const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+      const dept = doctor ? memoryStore.departments.find(dep => dep.id === doctor.departmentId) : null;
+      const medicalRecord = memoryStore.medicalRecords.find(r => r.appointmentId === a.id);
+      return {
+        ...a,
+        patient,
+        doctor: { ...doctor, user: docUser, department: dept },
+        medicalRecord,
+      };
+    });
+  },
+
+  async createAppointment(data: any) {
+    const nextAptNo = `APT-2026-${1000 + memoryStore.appointments.length + 1}`;
+    const payload = {
+      ...data,
+      appointmentNo: data.appointmentNo || nextAptNo,
+      status: data.status || 'SCHEDULED',
+    };
+
+    if (await isPrismaConnected()) {
+      return prisma.appointment.create({
+        data: payload,
+        include: { patient: true, doctor: { include: { user: true, department: true } } },
+      });
+    }
+
+    const newApt = {
+      id: `apt-${Date.now()}`,
+      appointmentNo: payload.appointmentNo,
+      patientId: payload.patientId,
+      doctorId: payload.doctorId,
+      scheduledAt: payload.scheduledAt,
+      timeSlot: payload.timeSlot,
+      reasonForVisit: payload.reasonForVisit,
+      status: payload.status,
+      vitalsNotes: payload.vitalsNotes || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    memoryStore.appointments.push(newApt);
+    const patient = memoryStore.patients.find(p => p.id === newApt.patientId);
+    const doctor = memoryStore.doctors.find(d => d.id === newApt.doctorId);
+    const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+    const dept = doctor ? memoryStore.departments.find(dp => dp.id === doctor.departmentId) : null;
+    return { ...newApt, patient, doctor: { ...doctor, user: docUser, department: dept } };
+  },
+
+  async updateAppointmentStatus(id: string, status: string) {
+    if (await isPrismaConnected()) {
+      return prisma.appointment.update({
+        where: { id },
+        data: { status: status as any },
+      });
+    }
+    const idx = memoryStore.appointments.findIndex(a => a.id === id);
+    if (idx === -1) return null;
+    memoryStore.appointments[idx] = {
+      ...memoryStore.appointments[idx],
+      status: status as any,
+      updatedAt: new Date().toISOString(),
+    };
+    return memoryStore.appointments[idx];
+  },
+
+  // --- MEDICAL RECORDS ---
+  async getMedicalRecords(patientId?: string, doctorId?: string) {
+    if (await isPrismaConnected()) {
+      const where: any = {};
+      if (patientId) where.patientId = patientId;
+      if (doctorId) where.doctorId = doctorId;
+      return prisma.medicalRecord.findMany({
+        where,
+        include: {
+          patient: true,
+          doctor: { include: { user: true, department: true } },
+          prescription: { include: { items: { include: { medicine: true } } } },
+        },
+        orderBy: { recordedAt: 'desc' },
+      });
+    }
+
+    let records = [...memoryStore.medicalRecords];
+    if (patientId) records = records.filter(r => r.patientId === patientId);
+    if (doctorId) records = records.filter(r => r.doctorId === doctorId);
+    return records.map(r => {
+      const patient = memoryStore.patients.find(p => p.id === r.patientId);
+      const doctor = memoryStore.doctors.find(d => d.id === r.doctorId);
+      const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+      const dept = doctor ? memoryStore.departments.find(dp => dp.id === doctor.departmentId) : null;
+      const rx = memoryStore.prescriptions.find(p => p.medicalRecordId === r.id);
+      let prescription = null;
+      if (rx) {
+        prescription = {
+          ...rx,
+          items: rx.items.map((item: any) => ({
+            ...item,
+            medicine: memoryStore.medicines.find(m => m.id === item.medicineId),
+          })),
+        };
+      }
+      return {
+        ...r,
+        patient,
+        doctor: { ...doctor, user: docUser, department: dept },
+        prescription,
+      };
+    });
+  },
+
+  async createMedicalRecord(data: any) {
+    const nextRecNo = `MR-2026-${String(memoryStore.medicalRecords.length + 1).padStart(3, '0')}`;
+    const payload = {
+      ...data,
+      recordNumber: data.recordNumber || nextRecNo,
+    };
+
+    if (await isPrismaConnected()) {
+      return prisma.medicalRecord.create({
+        data: payload,
+        include: { patient: true, doctor: { include: { user: true } } },
+      });
+    }
+
+    const newRecord = {
+      id: `rec-${Date.now()}`,
+      recordNumber: payload.recordNumber,
+      patientId: payload.patientId,
+      doctorId: payload.doctorId,
+      appointmentId: payload.appointmentId || null,
+      chiefComplaint: payload.chiefComplaint,
+      diagnosis: payload.diagnosis,
+      treatmentPlan: payload.treatmentPlan,
+      clinicalNotes: payload.clinicalNotes || null,
+      labResults: payload.labResults || null,
+      recordedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    memoryStore.medicalRecords.unshift(newRecord);
+    return newRecord;
+  },
+
+  // --- PRESCRIPTIONS & MEDICINES ---
+  async getMedicines() {
+    if (await isPrismaConnected()) {
+      return prisma.medicine.findMany({ orderBy: { name: 'asc' } });
+    }
+    return [...memoryStore.medicines].sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  async createMedicine(data: any) {
+    if (await isPrismaConnected()) {
+      return prisma.medicine.create({ data });
+    }
+    const newMed = {
+      id: `med-${Date.now()}`,
+      code: data.code,
+      name: data.name,
+      genericName: data.genericName || null,
+      category: data.category,
+      dosageForm: data.dosageForm,
+      strength: data.strength,
+      unitPrice: Number(data.unitPrice),
+      stockQuantity: Number(data.stockQuantity || 0),
+      reorderLevel: Number(data.reorderLevel || 20),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    memoryStore.medicines.push(newMed);
+    return newMed;
+  },
+
+  async updateMedicineStock(id: string, delta: number) {
+    if (await isPrismaConnected()) {
+      return prisma.medicine.update({
+        where: { id },
+        data: { stockQuantity: { increment: delta } },
+      });
+    }
+    const med = memoryStore.medicines.find(m => m.id === id);
+    if (!med) return null;
+    med.stockQuantity = Math.max(0, med.stockQuantity + delta);
+    return med;
+  },
+
+  async getPrescriptions(patientId?: string, doctorId?: string) {
+    if (await isPrismaConnected()) {
+      const where: any = {};
+      if (patientId) where.patientId = patientId;
+      if (doctorId) where.doctorId = doctorId;
+      return prisma.prescription.findMany({
+        where,
+        include: {
+          patient: true,
+          doctor: { include: { user: true } },
+          items: { include: { medicine: true } },
+        },
+        orderBy: { issuedAt: 'desc' },
+      });
+    }
+
+    let rxs = [...memoryStore.prescriptions];
+    if (patientId) rxs = rxs.filter(p => p.patientId === patientId);
+    if (doctorId) rxs = rxs.filter(p => p.doctorId === doctorId);
+    return rxs.map(rx => {
+      const patient = memoryStore.patients.find(p => p.id === rx.patientId);
+      const doctor = memoryStore.doctors.find(d => d.id === rx.doctorId);
+      const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+      const items = rx.items.map((item: any) => ({
+        ...item,
+        medicine: memoryStore.medicines.find(m => m.id === item.medicineId),
+      }));
+      return { ...rx, patient, doctor: { ...doctor, user: docUser }, items };
+    });
+  },
+
+  async createPrescription(data: {
+    patientId: string;
+    doctorId: string;
+    medicalRecordId?: string;
+    generalAdvice?: string;
+    items: Array<{ medicineId: string; dosage: string; frequency: string; duration: string; instructions?: string; quantity: number }>;
+  }) {
+    const nextRxNo = `RX-2026-${String(memoryStore.prescriptions.length + 1).padStart(3, '0')}`;
+    const rxId = `rx-${Date.now()}`;
+
+    if (await isPrismaConnected()) {
+      return prisma.prescription.create({
+        data: {
+          prescriptionNo: nextRxNo,
+          patientId: data.patientId,
+          doctorId: data.doctorId,
+          medicalRecordId: data.medicalRecordId,
+          generalAdvice: data.generalAdvice,
+          items: {
+            create: data.items.map(item => ({
+              medicineId: item.medicineId,
+              dosage: item.dosage,
+              frequency: item.frequency,
+              duration: item.duration,
+              instructions: item.instructions,
+              quantity: item.quantity,
+            })),
+          },
+        },
+        include: { items: { include: { medicine: true } } },
+      });
+    }
+
+    const itemsWithIds = data.items.map((item, idx) => ({
+      id: `rxi-${Date.now()}-${idx}`,
+      medicineId: item.medicineId,
+      dosage: item.dosage,
+      frequency: item.frequency,
+      duration: item.duration,
+      instructions: item.instructions || null,
+      quantity: item.quantity,
+      createdAt: new Date().toISOString(),
+    }));
+
+    const newPrescription = {
+      id: rxId,
+      prescriptionNo: nextRxNo,
+      patientId: data.patientId,
+      doctorId: data.doctorId,
+      medicalRecordId: data.medicalRecordId || null,
+      generalAdvice: data.generalAdvice || null,
+      issuedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      items: itemsWithIds,
+    };
+
+    memoryStore.prescriptions.unshift(newPrescription);
+
+    // Deduct stock in memory
+    for (const item of data.items) {
+      const med = memoryStore.medicines.find(m => m.id === item.medicineId);
+      if (med) med.stockQuantity = Math.max(0, med.stockQuantity - item.quantity);
+    }
+
+    return newPrescription;
+  },
+
+  // --- ROOMS ---
+  async getRooms() {
+    if (await isPrismaConnected()) {
+      return prisma.room.findMany({
+        include: { department: true },
+        orderBy: { roomNumber: 'asc' },
+      });
+    }
+    return memoryStore.rooms.map(r => ({
+      ...r,
+      department: memoryStore.departments.find(d => d.id === r.departmentId),
+    }));
+  },
+
+  async updateRoomStatus(id: string, status: string) {
+    if (await isPrismaConnected()) {
+      return prisma.room.update({
+        where: { id },
+        data: { status: status as any },
+      });
+    }
+    const rm = memoryStore.rooms.find(r => r.id === id);
+    if (!rm) return null;
+    rm.status = status as any;
+    return rm;
+  },
+
+  // --- BILLS ---
+  async getBills(patientId?: string, status?: string) {
+    if (await isPrismaConnected()) {
+      const where: any = {};
+      if (patientId) where.patientId = patientId;
+      if (status) where.status = status;
+      return prisma.bill.findMany({
+        where,
+        include: { patient: true, items: true },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    let bills = [...memoryStore.bills];
+    if (patientId) bills = bills.filter(b => b.patientId === patientId);
+    if (status) bills = bills.filter(b => b.status === status);
+    return bills.map(b => ({
+      ...b,
+      patient: memoryStore.patients.find(p => p.id === b.patientId),
+    }));
+  },
+
+  async createBill(data: {
+    patientId: string;
+    items: Array<{ description: string; quantity: number; unitPrice: number }>;
+    taxRate?: number;
+    discount?: number;
+    notes?: string;
+  }) {
+    const nextBillNo = `INV-2026-${String(memoryStore.bills.length + 1).padStart(3, '0')}`;
+    const subTotal = data.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const taxAmount = Number((subTotal * (data.taxRate || 0.05)).toFixed(2));
+    const discount = data.discount || 0;
+    const totalAmount = Number((subTotal + taxAmount - discount).toFixed(2));
+
+    if (await isPrismaConnected()) {
+      return prisma.bill.create({
+        data: {
+          billNumber: nextBillNo,
+          patientId: data.patientId,
+          subTotal,
+          taxAmount,
+          discount,
+          totalAmount,
+          status: 'PENDING',
+          notes: data.notes,
+          items: {
+            create: data.items.map(item => ({
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              totalPrice: item.quantity * item.unitPrice,
+            })),
+          },
+        },
+        include: { items: true, patient: true },
+      });
+    }
+
+    const newBill = {
+      id: `bill-${Date.now()}`,
+      billNumber: nextBillNo,
+      patientId: data.patientId,
+      subTotal,
+      taxAmount,
+      discount,
+      totalAmount,
+      status: 'PENDING' as const,
+      notes: data.notes || null,
+      paidAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      items: data.items.map((item, idx) => ({
+        id: `bi-${Date.now()}-${idx}`,
+        billId: `bill-${Date.now()}`,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.quantity * item.unitPrice,
+        createdAt: new Date().toISOString(),
+      })),
+    };
+    memoryStore.bills.unshift(newBill);
+    return { ...newBill, patient: memoryStore.patients.find(p => p.id === data.patientId) };
+  },
+
+  async markBillAsPaid(id: string) {
+    if (await isPrismaConnected()) {
+      return prisma.bill.update({
+        where: { id },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
+    }
+    const bill = memoryStore.bills.find(b => b.id === id);
+    if (!bill) return null;
+    bill.status = 'PAID';
+    bill.paidAt = new Date().toISOString();
+    return bill;
+  },
+
+  // --- REPORTS & AUDIT LOGS ---
+  async getDashboardStatistics() {
+    const totalPatients = memoryStore.patients.length;
+    const totalDoctors = memoryStore.doctors.length;
+    const totalAppointments = memoryStore.appointments.length;
+    const pendingAppointments = memoryStore.appointments.filter(a => a.status === 'SCHEDULED' || a.status === 'CONFIRMED').length;
+    const completedAppointments = memoryStore.appointments.filter(a => a.status === 'COMPLETED').length;
+    const totalRooms = memoryStore.rooms.length;
+    const occupiedRooms = memoryStore.rooms.filter(r => r.status === 'OCCUPIED').length;
+    const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+    
+    const totalRevenue = memoryStore.bills
+      .filter(b => b.status === 'PAID')
+      .reduce((sum, b) => sum + b.totalAmount, 0);
+
+    const pendingRevenue = memoryStore.bills
+      .filter(b => b.status === 'PENDING')
+      .reduce((sum, b) => sum + b.totalAmount, 0);
+
+    // Department patient breakdown
+    const departmentDistribution = memoryStore.departments.map(dept => {
+      const docIds = memoryStore.doctors.filter(d => d.departmentId === dept.id).map(d => d.id);
+      const appointmentCount = memoryStore.appointments.filter(a => docIds.includes(a.doctorId)).length;
+      return {
+        name: dept.name,
+        code: dept.code,
+        appointments: appointmentCount,
+        doctors: docIds.length,
+      };
+    });
+
+    // 7-day appointment activity trend
+    const activityTrend = [
+      { day: 'Mon', scheduled: 4, completed: 3 },
+      { day: 'Tue', scheduled: 6, completed: 5 },
+      { day: 'Wed', scheduled: 8, completed: 7 },
+      { day: 'Thu', scheduled: 5, completed: 4 },
+      { day: 'Fri', scheduled: 9, completed: 8 },
+      { day: 'Sat', scheduled: 3, completed: 3 },
+      { day: 'Sun', scheduled: 2, completed: 2 },
+    ];
+
+    return {
+      totalPatients,
+      totalDoctors,
+      totalAppointments,
+      pendingAppointments,
+      completedAppointments,
+      totalRooms,
+      occupiedRooms,
+      occupancyRate,
+      totalRevenue: Number(totalRevenue.toFixed(2)),
+      pendingRevenue: Number(pendingRevenue.toFixed(2)),
+      departmentDistribution,
+      activityTrend,
+    };
+  },
+
+  async logAudit(userId: string | null, action: string, resource: string, details?: string, ipAddress?: string) {
+    const entry = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      userId,
+      action,
+      resource,
+      details: details || null,
+      ipAddress: ipAddress || '127.0.0.1',
+      createdAt: new Date().toISOString(),
+    };
+    memoryStore.auditLogs.unshift(entry);
+    if (memoryStore.auditLogs.length > 100) memoryStore.auditLogs.pop();
+    return entry;
+  },
+
+  async getAuditLogs(limit: number = 20) {
+    return memoryStore.auditLogs.slice(0, limit);
+  },
+};

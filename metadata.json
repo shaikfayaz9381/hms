@@ -1,0 +1,6 @@
+{
+  "name": "MedPulse Hospital Management System",
+  "description": "Comprehensive Hospital Management System featuring role-based portals for Admins, Doctors, Receptionists, and Patients, backed by Express, Prisma ORM, and Supabase PostgreSQL.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
