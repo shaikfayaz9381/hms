@@ -13,7 +13,13 @@ import {
   PublicOverview,
 } from '../types';
 
-const API_BASE = '/api';
+// API base URL.
+// - Same origin (default): Express serves both the frontend and /api — used in local dev
+//   and single-server production deploys.
+// - Separate backend (VITE_API_URL set at build time): used when the frontend is hosted
+//   statically (e.g. Netlify) and the Express API runs on another host (e.g. Render).
+const ENV_API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '');
+const API_BASE = ENV_API_URL ? `${ENV_API_URL}/api` : '/api';
 
 export function getAuthToken(): string | null {
   return localStorage.getItem('medpulse_token');
