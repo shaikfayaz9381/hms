@@ -64,17 +64,20 @@ export const AppointmentsView: React.FC = () => {
   useEffect(() => {
     async function loadSelectData() {
       try {
-        const [docs, pats] = await Promise.all([
-          api.getDoctors(),
-          api.getPatients(),
-        ]);
+        // Patients may book appointments for themselves and can list doctors,
+        // but the full patients directory is staff-only (403 for patients).
+        const docs = await api.getDoctors();
         setDoctors(docs);
-        setPatients(pats);
         if (docs.length > 0 && !bookData.doctorId) {
           setBookData(prev => ({ ...prev, doctorId: docs[0].id }));
         }
-        if (pats.length > 0 && !bookData.patientId && user?.role !== 'PATIENT') {
-          setBookData(prev => ({ ...prev, patientId: pats[0].id }));
+
+        if (user?.role !== 'PATIENT') {
+          const pats = await api.getPatients();
+          setPatients(pats);
+          if (pats.length > 0 && !bookData.patientId) {
+            setBookData(prev => ({ ...prev, patientId: pats[0].id }));
+          }
         }
       } catch (err) {
         console.error('Failed to load doctors/patients for booking:', err);
@@ -250,7 +253,7 @@ export const AppointmentsView: React.FC = () => {
                       {getStatusBadge(apt.status)}
                     </td>
                     <td className="py-3 px-4 text-right space-x-1">
-                      {apt.status === 'SCHEDULED' && (
+                      {user?.role !== 'PATIENT' && apt.status === 'SCHEDULED' && (
                         <button
                           onClick={() => handleStatusUpdate(apt.id, 'CONFIRMED')}
                           className="px-2 py-0.5 text-[11px] bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-medium cursor-pointer"
@@ -258,7 +261,7 @@ export const AppointmentsView: React.FC = () => {
                           Confirm
                         </button>
                       )}
-                      {(apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED') && (
+                      {user?.role !== 'PATIENT' && (apt.status === 'SCHEDULED' || apt.status === 'CONFIRMED') && (
                         <button
                           onClick={() => handleStatusUpdate(apt.id, 'IN_PROGRESS')}
                           className="px-2 py-0.5 text-[11px] bg-amber-50 text-amber-700 hover:bg-amber-100 rounded font-medium cursor-pointer"
@@ -266,7 +269,7 @@ export const AppointmentsView: React.FC = () => {
                           Triage
                         </button>
                       )}
-                      {apt.status === 'IN_PROGRESS' && (
+                      {user?.role !== 'PATIENT' && apt.status === 'IN_PROGRESS' && (
                         <button
                           onClick={() => handleStatusUpdate(apt.id, 'COMPLETED')}
                           className="px-2 py-0.5 text-[11px] bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded font-medium cursor-pointer"
@@ -353,7 +356,7 @@ export const AppointmentsView: React.FC = () => {
                 >
                   {doctors.map(d => (
                     <option key={d.id} value={d.id}>
-                      Dr. {d.user?.firstName} {d.user?.lastName} — {d.department?.name} (${d.consultationFee})
+                      Dr. {d.user?.firstName} {d.user?.lastName} — {d.department?.name} (₹{d.consultationFee})
                     </option>
                   ))}
                 </select>

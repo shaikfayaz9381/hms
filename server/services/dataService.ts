@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
 import {
   initialUsers,
@@ -66,6 +67,91 @@ export async function isPrismaConnected(): Promise<boolean> {
     prismaAvailable = false;
     return false;
   }
+}
+
+// --- Helpers ---
+
+// Prisma throws P2025 when an update/delete target does not exist
+function isRecordNotFound(err: any): boolean {
+  return err?.code === 'P2025';
+}
+
+// Sequence helpers: generate the next human-readable number (MRN, APT, RX, INV...)
+// from the highest existing value, so numbers never collide across sessions.
+function parseSequence(value: string | null | undefined, prefix: string): number {
+  if (!value || !value.startsWith(prefix)) return 0;
+  const parsed = parseInt(value.slice(prefix.length), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function nextSequence(values: Array<string | null | undefined>, prefix: string, pad: number): string {
+  let max = 0;
+  for (const value of values) {
+    const parsed = parseSequence(value, prefix);
+    if (parsed > max) max = parsed;
+  }
+  return `${prefix}${String(max + 1).padStart(pad, '0')}`;
+}
+
+// Never expose password hashes to API consumers
+function sanitizeUser<T>(user: T): T {
+  if (!user) return user;
+  const { passwordHash, ...safe } = user as any;
+  return safe as T;
+}
+
+const publicUserSelect: Prisma.UserSelect = {
+  id: true,
+  email: true,
+  firstName: true,
+  lastName: true,
+  role: true,
+  phoneNumber: true,
+};
+
+async function nextPatientMRN(): Promise<string> {
+  const prefix = 'MRN-2026-';
+  if (await isPrismaConnected()) {
+    const rows = await prisma.patient.findMany({ select: { medicalRecordNumber: true } });
+    return nextSequence(rows.map(r => r.medicalRecordNumber), prefix, 4);
+  }
+  return nextSequence(memoryStore.patients.map(p => p.medicalRecordNumber), prefix, 4);
+}
+
+async function nextAppointmentNo(): Promise<string> {
+  const prefix = 'APT-2026-';
+  if (await isPrismaConnected()) {
+    const rows = await prisma.appointment.findMany({ select: { appointmentNo: true } });
+    return nextSequence(rows.map(r => r.appointmentNo), prefix, 4);
+  }
+  return nextSequence(memoryStore.appointments.map(a => a.appointmentNo), prefix, 4);
+}
+
+async function nextMedicalRecordNo(): Promise<string> {
+  const prefix = 'MR-2026-';
+  if (await isPrismaConnected()) {
+    const rows = await prisma.medicalRecord.findMany({ select: { recordNumber: true } });
+    return nextSequence(rows.map(r => r.recordNumber), prefix, 3);
+  }
+  return nextSequence(memoryStore.medicalRecords.map(r => r.recordNumber), prefix, 3);
+}
+
+async function nextPrescriptionNo(): Promise<string> {
+  const prefix = 'RX-2026-';
+  if (await isPrismaConnected()) {
+    const rows = await prisma.prescription.findMany({ select: { prescriptionNo: true } });
+    return nextSequence(rows.map(r => r.prescriptionNo), prefix, 3);
+  }
+  return nextSequence(memoryStore.prescriptions.map(r => r.prescriptionNo), prefix, 3);
+}
+
+async function nextBillNumber(): Promise<string> {
+  const prefix = 'INV-2026-';
+  if (await isPrismaConnected()) {
+    const rows = await prisma.bill.findMany({ select: { billNumber: true } });
+    return nextSequence(rows.map(r => r.billNumber), prefix, 3);
+  }
+  return nextSequence(memoryStore.bills.map(b => b.billNumber), prefix, 3);
 }
 
 export const dataService = {
@@ -140,10 +226,10 @@ export const dataService = {
       return prisma.patient.findUnique({
         where: { id },
         include: {
-          user: true,
-          appointments: { include: { doctor: { include: { user: true, department: true } } } },
-          medicalRecords: { include: { doctor: { include: { user: true } } } },
-          prescriptions: { include: { doctor: { include: { user: true } }, items: { include: { medicine: true } } } },
+          user: { select: publicUserSelect },
+          appointments: { include: { doctor: { include: { user: { select: publicUserSelect }, department: true } } } },
+          medicalRecords: { include: { doctor: { include: { user: { select: publicUserSelect } } } } },
+          prescriptions: { include: { doctor: { include: { user: { select: publicUserSelect } } }, items: { include: { medicine: true } } } },
           bills: { include: { items: true } },
         },
       });
@@ -154,7 +240,7 @@ export const dataService = {
       .filter(a => a.patientId === id)
       .map(a => {
         const doc = memoryStore.doctors.find(d => d.id === a.doctorId);
-        const docUser = doc ? memoryStore.users.find(u => u.id === doc.userId) : null;
+        const docUser = doc ? sanitizeUser(memoryStore.users.find(u => u.id === doc.userId)) : null;
         const dept = doc ? memoryStore.departments.find(dp => dp.id === doc.departmentId) : null;
         return { ...a, doctor: { ...doc, user: docUser, department: dept } };
       });
@@ -162,14 +248,14 @@ export const dataService = {
       .filter(r => r.patientId === id)
       .map(r => {
         const doc = memoryStore.doctors.find(d => d.id === r.doctorId);
-        const docUser = doc ? memoryStore.users.find(u => u.id === doc.userId) : null;
+        const docUser = doc ? sanitizeUser(memoryStore.users.find(u => u.id === doc.userId)) : null;
         return { ...r, doctor: { ...doc, user: docUser } };
       });
     const prescriptions = memoryStore.prescriptions
       .filter(px => px.patientId === id)
       .map(px => {
         const doc = memoryStore.doctors.find(d => d.id === px.doctorId);
-        const docUser = doc ? memoryStore.users.find(u => u.id === doc.userId) : null;
+        const docUser = doc ? sanitizeUser(memoryStore.users.find(u => u.id === doc.userId)) : null;
         const items = px.items.map((item: any) => ({
           ...item,
           medicine: memoryStore.medicines.find(m => m.id === item.medicineId),
@@ -180,21 +266,44 @@ export const dataService = {
     return { ...patient, appointments: apts, medicalRecords: records, prescriptions, bills };
   },
 
+  async countPatients(): Promise<number> {
+    if (await isPrismaConnected()) {
+      return prisma.patient.count();
+    }
+    return memoryStore.patients.length;
+  },
+
+  async generateNextMRN(): Promise<string> {
+    return nextPatientMRN();
+  },
+
   async createPatient(data: any) {
-    const nextMRN = `MRN-2026-${String(memoryStore.patients.length + 1).padStart(4, '0')}`;
-    const patientData = {
-      ...data,
-      medicalRecordNumber: data.medicalRecordNumber || nextMRN,
-    };
+    const medicalRecordNumber = data.medicalRecordNumber || (await nextPatientMRN());
 
     if (await isPrismaConnected()) {
-      return prisma.patient.create({ data: patientData });
+      return prisma.patient.create({
+        data: {
+          userId: data.userId || null,
+          medicalRecordNumber,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          dateOfBirth: new Date(data.dateOfBirth),
+          gender: data.gender,
+          bloodGroup: data.bloodGroup || null,
+          contactNumber: data.contactNumber,
+          emergencyContact: data.emergencyContact || null,
+          address: data.address || null,
+          pincode: data.pincode || null,
+          allergies: data.allergies || null,
+          chronicConditions: data.chronicConditions || null,
+        },
+      });
     }
 
     const newPatient = {
       id: `pat-${Date.now()}`,
       userId: data.userId || null,
-      medicalRecordNumber: patientData.medicalRecordNumber,
+      medicalRecordNumber,
       firstName: data.firstName,
       lastName: data.lastName,
       dateOfBirth: data.dateOfBirth,
@@ -203,6 +312,7 @@ export const dataService = {
       contactNumber: data.contactNumber,
       emergencyContact: data.emergencyContact || null,
       address: data.address || null,
+      pincode: data.pincode || null,
       allergies: data.allergies || null,
       chronicConditions: data.chronicConditions || null,
       createdAt: new Date().toISOString(),
@@ -214,7 +324,14 @@ export const dataService = {
 
   async updatePatient(id: string, data: any) {
     if (await isPrismaConnected()) {
-      return prisma.patient.update({ where: { id }, data });
+      const payload: any = { ...data };
+      if (payload.dateOfBirth) payload.dateOfBirth = new Date(payload.dateOfBirth);
+      try {
+        return await prisma.patient.update({ where: { id }, data: payload });
+      } catch (err) {
+        if (isRecordNotFound(err)) return null;
+        throw err;
+      }
     }
     const idx = memoryStore.patients.findIndex(p => p.id === id);
     if (idx === -1) return null;
@@ -228,14 +345,14 @@ export const dataService = {
       const where = departmentId ? { departmentId } : {};
       return prisma.doctor.findMany({
         where,
-        include: { user: true, department: true },
+        include: { user: { select: publicUserSelect }, department: true },
       });
     }
     let docs = [...memoryStore.doctors];
     if (departmentId) docs = docs.filter(d => d.departmentId === departmentId);
     return docs.map(d => ({
       ...d,
-      user: memoryStore.users.find(u => u.id === d.userId),
+      user: sanitizeUser(memoryStore.users.find(u => u.id === d.userId)),
       department: memoryStore.departments.find(dep => dep.id === d.departmentId),
     }));
   },
@@ -273,7 +390,7 @@ export const dataService = {
         where,
         include: {
           patient: true,
-          doctor: { include: { user: true, department: true } },
+          doctor: { include: { user: { select: publicUserSelect }, department: true } },
           medicalRecord: true,
         },
         orderBy: { scheduledAt: 'asc' },
@@ -291,7 +408,7 @@ export const dataService = {
     return apts.map(a => {
       const patient = memoryStore.patients.find(p => p.id === a.patientId);
       const doctor = memoryStore.doctors.find(d => d.id === a.doctorId);
-      const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+      const docUser = doctor ? sanitizeUser(memoryStore.users.find(u => u.id === doctor.userId)) : null;
       const dept = doctor ? memoryStore.departments.find(dep => dep.id === doctor.departmentId) : null;
       const medicalRecord = memoryStore.medicalRecords.find(r => r.appointmentId === a.id);
       return {
@@ -304,30 +421,35 @@ export const dataService = {
   },
 
   async createAppointment(data: any) {
-    const nextAptNo = `APT-2026-${1000 + memoryStore.appointments.length + 1}`;
-    const payload = {
-      ...data,
-      appointmentNo: data.appointmentNo || nextAptNo,
-      status: data.status || 'SCHEDULED',
-    };
+    const appointmentNo = data.appointmentNo || (await nextAppointmentNo());
+    const status = data.status || 'SCHEDULED';
 
     if (await isPrismaConnected()) {
       return prisma.appointment.create({
-        data: payload,
-        include: { patient: true, doctor: { include: { user: true, department: true } } },
+        data: {
+          appointmentNo,
+          patientId: data.patientId,
+          doctorId: data.doctorId,
+          scheduledAt: new Date(data.scheduledAt),
+          timeSlot: data.timeSlot,
+          reasonForVisit: data.reasonForVisit,
+          status,
+          vitalsNotes: data.vitalsNotes || null,
+        },
+        include: { patient: true, doctor: { include: { user: { select: publicUserSelect }, department: true } } },
       });
     }
 
     const newApt = {
       id: `apt-${Date.now()}`,
-      appointmentNo: payload.appointmentNo,
-      patientId: payload.patientId,
-      doctorId: payload.doctorId,
-      scheduledAt: payload.scheduledAt,
-      timeSlot: payload.timeSlot,
-      reasonForVisit: payload.reasonForVisit,
-      status: payload.status,
-      vitalsNotes: payload.vitalsNotes || null,
+      appointmentNo,
+      patientId: data.patientId,
+      doctorId: data.doctorId,
+      scheduledAt: data.scheduledAt,
+      timeSlot: data.timeSlot,
+      reasonForVisit: data.reasonForVisit,
+      status,
+      vitalsNotes: data.vitalsNotes || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -339,12 +461,24 @@ export const dataService = {
     return { ...newApt, patient, doctor: { ...doctor, user: docUser, department: dept } };
   },
 
+  async getAppointmentById(id: string) {
+    if (await isPrismaConnected()) {
+      return prisma.appointment.findUnique({ where: { id } });
+    }
+    return memoryStore.appointments.find(a => a.id === id) || null;
+  },
+
   async updateAppointmentStatus(id: string, status: string) {
     if (await isPrismaConnected()) {
-      return prisma.appointment.update({
-        where: { id },
-        data: { status: status as any },
-      });
+      try {
+        return await prisma.appointment.update({
+          where: { id },
+          data: { status: status as any },
+        });
+      } catch (err) {
+        if (isRecordNotFound(err)) return null;
+        throw err;
+      }
     }
     const idx = memoryStore.appointments.findIndex(a => a.id === id);
     if (idx === -1) return null;
@@ -366,7 +500,7 @@ export const dataService = {
         where,
         include: {
           patient: true,
-          doctor: { include: { user: true, department: true } },
+          doctor: { include: { user: { select: publicUserSelect }, department: true } },
           prescription: { include: { items: { include: { medicine: true } } } },
         },
         orderBy: { recordedAt: 'desc' },
@@ -379,7 +513,7 @@ export const dataService = {
     return records.map(r => {
       const patient = memoryStore.patients.find(p => p.id === r.patientId);
       const doctor = memoryStore.doctors.find(d => d.id === r.doctorId);
-      const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+      const docUser = doctor ? sanitizeUser(memoryStore.users.find(u => u.id === doctor.userId)) : null;
       const dept = doctor ? memoryStore.departments.find(dp => dp.id === doctor.departmentId) : null;
       const rx = memoryStore.prescriptions.find(p => p.medicalRecordId === r.id);
       let prescription = null;
@@ -402,30 +536,36 @@ export const dataService = {
   },
 
   async createMedicalRecord(data: any) {
-    const nextRecNo = `MR-2026-${String(memoryStore.medicalRecords.length + 1).padStart(3, '0')}`;
-    const payload = {
-      ...data,
-      recordNumber: data.recordNumber || nextRecNo,
-    };
+    const recordNumber = data.recordNumber || (await nextMedicalRecordNo());
 
     if (await isPrismaConnected()) {
       return prisma.medicalRecord.create({
-        data: payload,
-        include: { patient: true, doctor: { include: { user: true } } },
+        data: {
+          recordNumber,
+          patientId: data.patientId,
+          doctorId: data.doctorId,
+          appointmentId: data.appointmentId || null,
+          chiefComplaint: data.chiefComplaint,
+          diagnosis: data.diagnosis,
+          treatmentPlan: data.treatmentPlan,
+          clinicalNotes: data.clinicalNotes || null,
+          labResults: data.labResults || null,
+        },
+        include: { patient: true, doctor: { include: { user: { select: publicUserSelect } } } },
       });
     }
 
     const newRecord = {
       id: `rec-${Date.now()}`,
-      recordNumber: payload.recordNumber,
-      patientId: payload.patientId,
-      doctorId: payload.doctorId,
-      appointmentId: payload.appointmentId || null,
-      chiefComplaint: payload.chiefComplaint,
-      diagnosis: payload.diagnosis,
-      treatmentPlan: payload.treatmentPlan,
-      clinicalNotes: payload.clinicalNotes || null,
-      labResults: payload.labResults || null,
+      recordNumber,
+      patientId: data.patientId,
+      doctorId: data.doctorId,
+      appointmentId: data.appointmentId || null,
+      chiefComplaint: data.chiefComplaint,
+      diagnosis: data.diagnosis,
+      treatmentPlan: data.treatmentPlan,
+      clinicalNotes: data.clinicalNotes || null,
+      labResults: data.labResults || null,
       recordedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -466,9 +606,11 @@ export const dataService = {
 
   async updateMedicineStock(id: string, delta: number) {
     if (await isPrismaConnected()) {
+      const med = await prisma.medicine.findUnique({ where: { id } });
+      if (!med) return null;
       return prisma.medicine.update({
         where: { id },
-        data: { stockQuantity: { increment: delta } },
+        data: { stockQuantity: Math.max(0, med.stockQuantity + delta) },
       });
     }
     const med = memoryStore.medicines.find(m => m.id === id);
@@ -486,7 +628,7 @@ export const dataService = {
         where,
         include: {
           patient: true,
-          doctor: { include: { user: true } },
+          doctor: { include: { user: { select: publicUserSelect } } },
           items: { include: { medicine: true } },
         },
         orderBy: { issuedAt: 'desc' },
@@ -499,7 +641,7 @@ export const dataService = {
     return rxs.map(rx => {
       const patient = memoryStore.patients.find(p => p.id === rx.patientId);
       const doctor = memoryStore.doctors.find(d => d.id === rx.doctorId);
-      const docUser = doctor ? memoryStore.users.find(u => u.id === doctor.userId) : null;
+      const docUser = doctor ? sanitizeUser(memoryStore.users.find(u => u.id === doctor.userId)) : null;
       const items = rx.items.map((item: any) => ({
         ...item,
         medicine: memoryStore.medicines.find(m => m.id === item.medicineId),
@@ -515,29 +657,44 @@ export const dataService = {
     generalAdvice?: string;
     items: Array<{ medicineId: string; dosage: string; frequency: string; duration: string; instructions?: string; quantity: number }>;
   }) {
-    const nextRxNo = `RX-2026-${String(memoryStore.prescriptions.length + 1).padStart(3, '0')}`;
+    const prescriptionNo = await nextPrescriptionNo();
     const rxId = `rx-${Date.now()}`;
 
     if (await isPrismaConnected()) {
-      return prisma.prescription.create({
-        data: {
-          prescriptionNo: nextRxNo,
-          patientId: data.patientId,
-          doctorId: data.doctorId,
-          medicalRecordId: data.medicalRecordId,
-          generalAdvice: data.generalAdvice,
-          items: {
-            create: data.items.map(item => ({
-              medicineId: item.medicineId,
-              dosage: item.dosage,
-              frequency: item.frequency,
-              duration: item.duration,
-              instructions: item.instructions,
-              quantity: item.quantity,
-            })),
+      return prisma.$transaction(async tx => {
+        const prescription = await tx.prescription.create({
+          data: {
+            prescriptionNo,
+            patientId: data.patientId,
+            doctorId: data.doctorId,
+            medicalRecordId: data.medicalRecordId || null,
+            generalAdvice: data.generalAdvice || null,
+            items: {
+              create: data.items.map(item => ({
+                medicineId: item.medicineId,
+                dosage: item.dosage,
+                frequency: item.frequency,
+                duration: item.duration,
+                instructions: item.instructions || null,
+                quantity: item.quantity,
+              })),
+            },
           },
-        },
-        include: { items: { include: { medicine: true } } },
+          include: { items: { include: { medicine: true } } },
+        });
+
+        // Automatically deduct pharmacy inventory for each prescribed item
+        for (const item of data.items) {
+          const med = await tx.medicine.findUnique({ where: { id: item.medicineId } });
+          if (med) {
+            await tx.medicine.update({
+              where: { id: med.id },
+              data: { stockQuantity: Math.max(0, med.stockQuantity - item.quantity) },
+            });
+          }
+        }
+
+        return prescription;
       });
     }
 
@@ -554,7 +711,7 @@ export const dataService = {
 
     const newPrescription = {
       id: rxId,
-      prescriptionNo: nextRxNo,
+      prescriptionNo,
       patientId: data.patientId,
       doctorId: data.doctorId,
       medicalRecordId: data.medicalRecordId || null,
@@ -592,10 +749,15 @@ export const dataService = {
 
   async updateRoomStatus(id: string, status: string) {
     if (await isPrismaConnected()) {
-      return prisma.room.update({
-        where: { id },
-        data: { status: status as any },
-      });
+      try {
+        return await prisma.room.update({
+          where: { id },
+          data: { status: status as any },
+        });
+      } catch (err) {
+        if (isRecordNotFound(err)) return null;
+        throw err;
+      }
     }
     const rm = memoryStore.rooms.find(r => r.id === id);
     if (!rm) return null;
@@ -631,16 +793,16 @@ export const dataService = {
     discount?: number;
     notes?: string;
   }) {
-    const nextBillNo = `INV-2026-${String(memoryStore.bills.length + 1).padStart(3, '0')}`;
+    const billNumber = await nextBillNumber();
     const subTotal = data.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-    const taxAmount = Number((subTotal * (data.taxRate || 0.05)).toFixed(2));
+    const taxAmount = Number((subTotal * (data.taxRate ?? 0.05)).toFixed(2));
     const discount = data.discount || 0;
     const totalAmount = Number((subTotal + taxAmount - discount).toFixed(2));
 
     if (await isPrismaConnected()) {
       return prisma.bill.create({
         data: {
-          billNumber: nextBillNo,
+          billNumber,
           patientId: data.patientId,
           subTotal,
           taxAmount,
@@ -663,7 +825,7 @@ export const dataService = {
 
     const newBill = {
       id: `bill-${Date.now()}`,
-      billNumber: nextBillNo,
+      billNumber,
       patientId: data.patientId,
       subTotal,
       taxAmount,
@@ -688,12 +850,24 @@ export const dataService = {
     return { ...newBill, patient: memoryStore.patients.find(p => p.id === data.patientId) };
   },
 
+  async getBillById(id: string) {
+    if (await isPrismaConnected()) {
+      return prisma.bill.findUnique({ where: { id }, include: { items: true, patient: true } });
+    }
+    return memoryStore.bills.find(b => b.id === id) || null;
+  },
+
   async markBillAsPaid(id: string) {
     if (await isPrismaConnected()) {
-      return prisma.bill.update({
-        where: { id },
-        data: { status: 'PAID', paidAt: new Date() },
-      });
+      try {
+        return await prisma.bill.update({
+          where: { id },
+          data: { status: 'PAID', paidAt: new Date() },
+        });
+      } catch (err) {
+        if (isRecordNotFound(err)) return null;
+        throw err;
+      }
     }
     const bill = memoryStore.bills.find(b => b.id === id);
     if (!bill) return null;
@@ -704,6 +878,89 @@ export const dataService = {
 
   // --- REPORTS & AUDIT LOGS ---
   async getDashboardStatistics() {
+    if (await isPrismaConnected()) {
+      const [
+        totalPatients,
+        totalDoctors,
+        totalAppointments,
+        pendingAppointments,
+        completedAppointments,
+        totalRooms,
+        occupiedRooms,
+        paidRevenue,
+        pendingRevenue,
+        departments,
+        allDoctors,
+        allAppointments,
+      ] = await Promise.all([
+        prisma.patient.count(),
+        prisma.doctor.count(),
+        prisma.appointment.count(),
+        prisma.appointment.count({ where: { status: { in: ['SCHEDULED', 'CONFIRMED'] } } }),
+        prisma.appointment.count({ where: { status: 'COMPLETED' } }),
+        prisma.room.count(),
+        prisma.room.count({ where: { status: 'OCCUPIED' } }),
+        prisma.bill.aggregate({ _sum: { totalAmount: true }, where: { status: 'PAID' } }),
+        prisma.bill.aggregate({ _sum: { totalAmount: true }, where: { status: 'PENDING' } }),
+        prisma.department.findMany({ orderBy: { name: 'asc' } }),
+        prisma.doctor.findMany({ select: { id: true, departmentId: true } }),
+        prisma.appointment.findMany({ select: { doctorId: true } }),
+      ]);
+
+      const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
+      const totalRevenue = paidRevenue._sum.totalAmount || 0;
+      const pendingRevenueTotal = pendingRevenue._sum.totalAmount || 0;
+
+      // Appointments per department (via their doctors)
+      const departmentDistribution = departments.map(dept => {
+        const docIds = allDoctors.filter(d => d.departmentId === dept.id).map(d => d.id);
+        return {
+          name: dept.name,
+          code: dept.code,
+          appointments: allAppointments.filter(a => docIds.includes(a.doctorId)).length,
+          doctors: docIds.length,
+        };
+      });
+
+      // 7-day appointment activity trend (real data)
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const activityTrend: Array<{ day: string; scheduled: number; completed: number }> = [];
+      for (let offset = 6; offset >= 0; offset--) {
+        const dayStart = new Date();
+        dayStart.setHours(0, 0, 0, 0);
+        dayStart.setDate(dayStart.getDate() - offset);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+
+        const [scheduled, completed] = await Promise.all([
+          prisma.appointment.count({
+            where: { scheduledAt: { gte: dayStart, lt: dayEnd }, status: { not: 'CANCELLED' } },
+          }),
+          prisma.appointment.count({
+            where: { scheduledAt: { gte: dayStart, lt: dayEnd }, status: 'COMPLETED' },
+          }),
+        ]);
+
+        activityTrend.push({ day: dayNames[dayStart.getDay()], scheduled, completed });
+      }
+
+      return {
+        totalPatients,
+        totalDoctors,
+        totalAppointments,
+        pendingAppointments,
+        completedAppointments,
+        totalRooms,
+        occupiedRooms,
+        occupancyRate,
+        totalRevenue: Number(totalRevenue.toFixed(2)),
+        pendingRevenue: Number(pendingRevenueTotal.toFixed(2)),
+        departmentDistribution,
+        activityTrend,
+      };
+    }
+
+    // In-memory demonstration mode
     const totalPatients = memoryStore.patients.length;
     const totalDoctors = memoryStore.doctors.length;
     const totalAppointments = memoryStore.appointments.length;
@@ -733,7 +990,7 @@ export const dataService = {
       };
     });
 
-    // 7-day appointment activity trend
+    // 7-day appointment activity trend (demonstration data)
     const activityTrend = [
       { day: 'Mon', scheduled: 4, completed: 3 },
       { day: 'Tue', scheduled: 6, completed: 5 },
@@ -761,13 +1018,32 @@ export const dataService = {
   },
 
   async logAudit(userId: string | null, action: string, resource: string, details?: string, ipAddress?: string) {
+    const ip = ipAddress || '127.0.0.1';
+
+    if (await isPrismaConnected()) {
+      try {
+        return await prisma.auditLog.create({
+          data: {
+            userId: userId || null,
+            action,
+            resource,
+            details: details || null,
+            ipAddress: ip,
+          },
+        });
+      } catch (err) {
+        // Audit logging must never break the actual operation
+        console.warn('[AuditLog] Failed to persist audit log to database:', err);
+      }
+    }
+
     const entry = {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       userId,
       action,
       resource,
       details: details || null,
-      ipAddress: ipAddress || '127.0.0.1',
+      ipAddress: ip,
       createdAt: new Date().toISOString(),
     };
     memoryStore.auditLogs.unshift(entry);
@@ -776,6 +1052,13 @@ export const dataService = {
   },
 
   async getAuditLogs(limit: number = 20) {
+    if (await isPrismaConnected()) {
+      return prisma.auditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      });
+    }
     return memoryStore.auditLogs.slice(0, limit);
   },
 };

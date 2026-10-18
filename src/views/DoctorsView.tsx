@@ -119,7 +119,7 @@ export const DoctorsView: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-[11px] text-slate-400 block">Consultation Fee</span>
-                  <span className="font-bold text-teal-700 font-mono">${doc.consultationFee.toFixed(2)}</span>
+                  <span className="font-bold text-teal-700 font-mono">₹{doc.consultationFee.toFixed(2)}</span>
                 </div>
                 <div>
                   <span className="text-[11px] text-slate-400 block">Contact</span>

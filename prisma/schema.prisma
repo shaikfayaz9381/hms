@@ -2,6 +2,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+  schemas   = ["medpulse"]
 }
 
 generator client {
@@ -13,12 +14,16 @@ enum Role {
   DOCTOR
   RECEPTIONIST
   PATIENT
+
+  @@schema("medpulse")
 }
 
 enum Gender {
   MALE
   FEMALE
   OTHER
+
+  @@schema("medpulse")
 }
 
 enum AppointmentStatus {
@@ -28,6 +33,8 @@ enum AppointmentStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+
+  @@schema("medpulse")
 }
 
 enum BillStatus {
@@ -35,6 +42,8 @@ enum BillStatus {
   PAID
   CANCELLED
   REFUNDED
+
+  @@schema("medpulse")
 }
 
 enum RoomType {
@@ -44,6 +53,8 @@ enum RoomType {
   ICU
   EMERGENCY
   OPERATION_THEATRE
+
+  @@schema("medpulse")
 }
 
 enum RoomStatus {
@@ -51,6 +62,8 @@ enum RoomStatus {
   OCCUPIED
   MAINTENANCE
   RESERVED
+
+  @@schema("medpulse")
 }
 
 model User {
@@ -64,7 +77,7 @@ model User {
   isActive     Boolean     @default(true)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
-  
+   
   patient      Patient?
   doctor       Doctor?
   staff        Staff?
@@ -72,6 +85,7 @@ model User {
 
   @@index([email])
   @@index([role])
+  @@schema("medpulse")
 }
 
 model Department {
@@ -82,9 +96,11 @@ model Department {
   location    String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  
+   
   doctors     Doctor[]
   rooms       Room[]
+
+  @@schema("medpulse")
 }
 
 model Doctor {
@@ -100,13 +116,14 @@ model Doctor {
   bio             String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
-  
+   
   appointments    Appointment[]
   medicalRecords  MedicalRecord[]
   prescriptions   Prescription[]
 
   @@index([departmentId])
   @@index([specialization])
+  @@schema("medpulse")
 }
 
 model Patient {
@@ -122,11 +139,12 @@ model Patient {
   contactNumber        String
   emergencyContact     String?
   address              String?
+  pincode              String?
   allergies            String?
   chronicConditions    String?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
-  
+   
   appointments         Appointment[]
   medicalRecords       MedicalRecord[]
   prescriptions        Prescription[]
@@ -134,6 +152,7 @@ model Patient {
 
   @@index([medicalRecordNumber])
   @@index([lastName, firstName])
+  @@schema("medpulse")
 }
 
 model Staff {
@@ -145,6 +164,8 @@ model Staff {
   shiftHours    String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+
+  @@schema("medpulse")
 }
 
 model Room {
@@ -158,6 +179,8 @@ model Room {
   department    Department? @relation(fields: [departmentId], references: [id])
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+
+  @@schema("medpulse")
 }
 
 model Appointment {
@@ -174,13 +197,14 @@ model Appointment {
   vitalsNotes    String?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
-  
+   
   medicalRecord  MedicalRecord?
 
   @@index([patientId])
   @@index([doctorId])
   @@index([scheduledAt])
   @@index([status])
+  @@schema("medpulse")
 }
 
 model MedicalRecord {
@@ -200,12 +224,13 @@ model MedicalRecord {
   recordedAt     DateTime      @default(now())
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
-  
+   
   prescription   Prescription?
 
   @@index([patientId])
   @@index([doctorId])
   @@index([recordedAt])
+  @@schema("medpulse")
 }
 
 model Medicine {
@@ -221,10 +246,11 @@ model Medicine {
   reorderLevel     Int                @default(20)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
-  
+   
   prescriptionItems PrescriptionItem[]
 
   @@index([name])
+  @@schema("medpulse")
 }
 
 model Prescription {
@@ -240,11 +266,12 @@ model Prescription {
   issuedAt        DateTime           @default(now())
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
-  
+   
   items           PrescriptionItem[]
 
   @@index([patientId])
   @@index([doctorId])
+  @@schema("medpulse")
 }
 
 model PrescriptionItem {
@@ -262,6 +289,7 @@ model PrescriptionItem {
 
   @@index([prescriptionId])
   @@index([medicineId])
+  @@schema("medpulse")
 }
 
 model Bill {
@@ -278,11 +306,12 @@ model Bill {
   paidAt      DateTime?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
-  
+   
   items       BillItem[]
 
   @@index([patientId])
   @@index([status])
+  @@schema("medpulse")
 }
 
 model BillItem {
@@ -296,6 +325,7 @@ model BillItem {
   createdAt   DateTime @default(now())
 
   @@index([billId])
+  @@schema("medpulse")
 }
 
 model AuditLog {
@@ -311,4 +341,5 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+  @@schema("medpulse")
 }

@@ -10,6 +10,7 @@ import prescriptionRoutes from './routes/prescriptions.js';
 import roomRoutes from './routes/rooms.js';
 import billRoutes from './routes/bills.js';
 import reportRoutes from './routes/reports.js';
+import publicRoutes from './routes/public.js';
 
 dotenv.config();
 
@@ -35,6 +36,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // REST API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/public', publicRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/appointments', appointmentRoutes);

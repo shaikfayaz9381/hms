@@ -36,7 +36,7 @@ export async function checkDatabaseConnection(): Promise<DatabaseStatus> {
     };
   }
 
-  const isSupabase = dbUrl.includes('supabase.com') || dbUrl.includes('pooler.supabase.com');
+  const isSupabase = dbUrl.includes('supabase.co') || dbUrl.includes('pooler.supabase.com');
   let host = 'Unknown';
   try {
     const parsed = new URL(dbUrl);

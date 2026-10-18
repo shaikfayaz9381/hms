@@ -17,6 +17,23 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Starting safe, repeatable seed process for Supabase PostgreSQL...');
 
+  // Clear existing data (development only) — delete in dependency order
+  console.log('-> Clearing existing data...');
+  await prisma.prescriptionItem.deleteMany();
+  await prisma.billItem.deleteMany();
+  await prisma.prescription.deleteMany();
+  await prisma.bill.deleteMany();
+  await prisma.medicalRecord.deleteMany();
+  await prisma.appointment.deleteMany();
+  await prisma.patient.deleteMany();
+  await prisma.doctor.deleteMany();
+  await prisma.medicine.deleteMany();
+  await prisma.room.deleteMany();
+  await prisma.staff.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.department.deleteMany();
+
   // 1. Seed Departments
   console.log('-> Seeding Departments...');
   for (const dept of initialDepartments) {
@@ -91,6 +108,8 @@ async function main() {
         lastName: pat.lastName,
         contactNumber: pat.contactNumber,
         emergencyContact: pat.emergencyContact,
+        address: pat.address,
+        pincode: pat.pincode,
         allergies: pat.allergies,
         chronicConditions: pat.chronicConditions,
       },
@@ -106,6 +125,7 @@ async function main() {
         contactNumber: pat.contactNumber,
         emergencyContact: pat.emergencyContact,
         address: pat.address,
+        pincode: pat.pincode,
         allergies: pat.allergies,
         chronicConditions: pat.chronicConditions,
       },

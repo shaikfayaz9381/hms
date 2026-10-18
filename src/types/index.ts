@@ -50,6 +50,7 @@ export interface Patient {
   contactNumber: string;
   emergencyContact?: string;
   address?: string;
+  pincode?: string;
   allergies?: string;
   chronicConditions?: string;
   createdAt: string;
@@ -173,13 +174,37 @@ export interface AuditLog {
   createdAt: string;
 }
 
-export interface DatabaseStatus {
-  isConnected: boolean;
-  isSupabase: boolean;
-  host: string;
-  databaseName: string;
-  latencyMs?: number;
-  message: string;
-  error?: string;
-  configuredUrl: string;
+export interface PublicOverview {
+  hospital: {
+    name: string;
+    tagline: string;
+    phone: string;
+    emergencyPhone: string;
+    email: string;
+    address: string;
+    hours: string;
+  };
+  stats: {
+    doctors: number;
+    departments: number;
+    rooms: number;
+    availableRooms: number;
+    medicines: number;
+  };
+  departments: Array<{
+    id: string;
+    name: string;
+    code: string;
+    description?: string;
+    location?: string;
+    doctorCount: number;
+  }>;
+  doctors: Array<{
+    id: string;
+    name: string;
+    specialization: string;
+    department?: string;
+    experienceYears: number;
+    consultationFee: number;
+  }>;
 }

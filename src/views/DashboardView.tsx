@@ -154,10 +154,10 @@ export const DashboardView: React.FC<{ onNavigate: (tab: string) => void }> = ({
               <CreditCard className="w-4 h-4 text-emerald-600" />
             </div>
             <div className="text-2xl font-bold text-emerald-700 font-mono tabular-nums">
-              ${stats?.totalRevenue ? stats.totalRevenue.toFixed(2) : '0.00'}
+              ₹{stats?.totalRevenue ? stats.totalRevenue.toFixed(2) : '0.00'}
             </div>
             <span className="text-[11px] text-slate-500 mt-1 block">
-              Pending: ${stats?.pendingRevenue ? stats.pendingRevenue.toFixed(2) : '0.00'}
+              Pending: ₹{stats?.pendingRevenue ? stats.pendingRevenue.toFixed(2) : '0.00'}
             </span>
           </div>
         </div>
@@ -316,7 +316,7 @@ export const DashboardView: React.FC<{ onNavigate: (tab: string) => void }> = ({
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
             <span className="text-xs text-slate-500 font-medium">Consultation Fee</span>
             <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums mt-1">
-              ${user.doctor?.consultationFee || 150}.00
+              ₹{user.doctor?.consultationFee || 150}.00
             </div>
             <span className="text-[11px] text-slate-500 mt-1 block">Standard outpatient slot</span>
           </div>

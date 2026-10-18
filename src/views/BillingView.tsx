@@ -68,7 +68,7 @@ export const BillingView: React.FC = () => {
     try {
       const res = await api.payBill(id);
       setPaymentNotice(
-        `Invoice ${billNumber} updated to PAID in Supabase PostgreSQL (Simulated academic clearance — no real funds transferred).`
+        `Invoice ${billNumber} updated to PAID (Simulated academic clearance — no real funds transferred).`
       );
       fetchBills();
       setTimeout(() => setPaymentNotice(null), 5000);
@@ -194,7 +194,7 @@ export const BillingView: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <span className="text-sm font-bold text-slate-900 font-mono block">
-                      ${bill.totalAmount.toFixed(2)}
+                      ₹{bill.totalAmount.toFixed(2)}
                     </span>
                     <span className={`text-[11px] font-semibold font-mono ${bill.status === 'PAID' ? 'text-emerald-700' : 'text-amber-700'}`}>
                       {bill.status}
@@ -228,8 +228,8 @@ export const BillingView: React.FC = () => {
                       <tr key={item.id}>
                         <td className="py-1.5 px-2 font-medium">{item.description}</td>
                         <td className="py-1.5 px-2 text-center font-mono">{item.quantity}</td>
-                        <td className="py-1.5 px-2 text-right font-mono">${item.unitPrice.toFixed(2)}</td>
-                        <td className="py-1.5 px-2 text-right font-mono font-semibold">${item.totalPrice.toFixed(2)}</td>
+                        <td className="py-1.5 px-2 text-right font-mono">₹{item.unitPrice.toFixed(2)}</td>
+                        <td className="py-1.5 px-2 text-right font-mono font-semibold">₹{item.totalPrice.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -240,10 +240,10 @@ export const BillingView: React.FC = () => {
               <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:justify-between text-xs text-slate-500 gap-2">
                 <span>{bill.notes || 'Hospital clinical billing service.'}</span>
                 <div className="flex gap-4 font-mono text-[11px] text-right">
-                  <span>Subtotal: ${bill.subTotal.toFixed(2)}</span>
-                  <span>Tax: ${bill.taxAmount.toFixed(2)}</span>
-                  {bill.discount > 0 && <span className="text-emerald-600">Discount: -${bill.discount.toFixed(2)}</span>}
-                  <span className="font-bold text-slate-900">Total: ${bill.totalAmount.toFixed(2)}</span>
+                  <span>Subtotal: ₹{bill.subTotal.toFixed(2)}</span>
+                  <span>Tax: ₹{bill.taxAmount.toFixed(2)}</span>
+                  {bill.discount > 0 && <span className="text-emerald-600">Discount: -₹{bill.discount.toFixed(2)}</span>}
+                  <span className="font-bold text-slate-900">Total: ₹{bill.totalAmount.toFixed(2)}</span>
                 </div>
               </div>
             </div>

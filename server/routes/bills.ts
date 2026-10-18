@@ -52,7 +52,7 @@ router.post('/', authenticateToken, requireRoles('ADMIN', 'RECEPTIONIST'), async
       req.user!.id,
       'CREATE_BILL',
       'Bill',
-      `Generated invoice ${bill.billNumber} for total $${bill.totalAmount}`,
+      `Generated invoice ${bill.billNumber} for total ₹${bill.totalAmount}`,
       req.ip
     );
     res.status(201).json(bill);
@@ -64,6 +64,18 @@ router.post('/', authenticateToken, requireRoles('ADMIN', 'RECEPTIONIST'), async
 // PUT /api/bills/:id/pay (Simulated payment update)
 router.put('/:id/pay', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
+    const existing = await dataService.getBillById(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: 'Invoice not found' });
+      return;
+    }
+
+    // Patients may only pay their own invoices
+    if (req.user?.role === 'PATIENT' && existing.patientId !== req.user.patientId) {
+      res.status(403).json({ error: 'Access denied: You may only manage your own invoices.' });
+      return;
+    }
+
     const updated = await dataService.markBillAsPaid(req.params.id);
     if (!updated) {
       res.status(404).json({ error: 'Invoice not found' });

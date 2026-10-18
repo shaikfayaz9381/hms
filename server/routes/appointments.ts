@@ -110,6 +110,23 @@ router.put('/:id/status', authenticateToken, async (req: Request, res: Response)
   }
 
   try {
+    // Patients may only cancel their own appointments
+    if (req.user?.role === 'PATIENT') {
+      const target = await dataService.getAppointmentById(req.params.id);
+      if (!target) {
+        res.status(404).json({ error: 'Appointment not found' });
+        return;
+      }
+      if (target.patientId !== req.user.patientId) {
+        res.status(403).json({ error: 'Access denied: You may only manage your own appointments.' });
+        return;
+      }
+      if (status !== 'CANCELLED') {
+        res.status(403).json({ error: 'Access denied: Patients may only cancel their own appointments.' });
+        return;
+      }
+    }
+
     const updated = await dataService.updateAppointmentStatus(req.params.id, status);
     if (!updated) {
       res.status(404).json({ error: 'Appointment not found' });

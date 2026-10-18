@@ -10,7 +10,7 @@ import {
   Room,
   Bill,
   AuditLog,
-  DatabaseStatus,
+  PublicOverview,
 } from '../types';
 
 const API_BASE = '/api';
@@ -62,6 +62,27 @@ export const api = {
     });
     setAuthToken(res.token);
     return res;
+  },
+
+  async register(data: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    dateOfBirth: string;
+    gender: 'MALE' | 'FEMALE' | 'OTHER';
+    bloodGroup?: string;
+    contactNumber: string;
+    emergencyContact?: string;
+    address?: string;
+    pincode?: string;
+    allergies?: string;
+    chronicConditions?: string;
+  }): Promise<{ message: string; user: { id: string; email: string; role: string; firstName: string; lastName: string }; patient: { id: string; medicalRecordNumber: string } }> {
+    return request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   async logout(): Promise<void> {
@@ -267,7 +288,8 @@ export const api = {
     return request<AuditLog[]>('/reports/audit-logs');
   },
 
-  async getDatabaseStatus(): Promise<DatabaseStatus> {
-    return request<DatabaseStatus>('/reports/database-status');
+  // Public hospital website content (no authentication required)
+  async getPublicOverview(): Promise<PublicOverview> {
+    return request<PublicOverview>('/public/overview');
   },
 };

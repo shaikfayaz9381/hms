@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Layout } from './components/Layout';
+import { HomeView } from './views/HomeView';
 import { LoginView } from './views/LoginView';
 import { DashboardView } from './views/DashboardView';
 import { PatientsView } from './views/PatientsView';
@@ -15,6 +16,16 @@ import { AuditLogsView } from './views/AuditLogsView';
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  // Public hospital website is shown by default; visitors open the login portal from it.
+  const [showPortal, setShowPortal] = useState(false);
+
+  // Reset to the dashboard whenever the signed-in account changes (role switch / login),
+  // so users never land on a view their new role cannot access.
+  // Also return to the public website after logging out.
+  useEffect(() => {
+    setCurrentTab('dashboard');
+    if (!user) setShowPortal(false);
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -28,7 +39,11 @@ const MainApp: React.FC = () => {
   }
 
   if (!user) {
-    return <LoginView />;
+    return showPortal ? (
+      <LoginView onBackToHome={() => setShowPortal(false)} />
+    ) : (
+      <HomeView onLoginClick={() => setShowPortal(true)} />
+    );
   }
 
   const renderActiveView = () => {

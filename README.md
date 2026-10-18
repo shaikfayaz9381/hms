@@ -134,10 +134,10 @@ The database comes pre-seeded with 4 development-only role accounts. All account
 
 | Role | Email | Password | Access Scope |
 | :--- | :--- | :--- | :--- |
-| **Admin** | `admin@hospital.local` | `Password123!` | Complete access to all 10 modules and audit logs |
-| **Doctor** | `doctor@hospital.local` | `Password123!` | Assigned consultations, patient charts, prescriptions |
-| **Receptionist** | `reception@hospital.local` | `Password123!` | Patient intake, appointment booking, invoices |
-| **Patient** | `patient@hospital.local` | `Password123!` | Personal medical records, prescriptions, billing |
+| **Admin** | `admin@medpulse.in` | `Password123!` | Complete access to all 10 modules and audit logs |
+| **Doctor** | `doctor@medpulse.in` | `Password123!` | Assigned consultations, patient charts, prescriptions |
+| **Receptionist** | `reception@medpulse.in` | `Password123!` | Patient intake, appointment booking, invoices |
+| **Patient** | `patient@medpulse.in` | `Password123!` | Personal medical records, prescriptions, billing |
 
 *(Note: You can also switch between any of these accounts in 1 click using the role selector in the top bar).*
 
@@ -236,6 +236,8 @@ If you need to develop or demonstrate without internet access:
 2. Update `.env` to point to localhost:
    ```env
    DATABASE_URL="postgresql://postgres:postgres@localhost:5432/hospital_db"
+   ```
+   All dummy data uses Indian names, +91 phone numbers, Indian addresses with pincodes, and prices in Indian Rupees (₹).
    ```
 3. Run `npm run db:push && npm run db:seed`.
 4. The exact same Prisma schema, models, and Express controllers continue to function without modifying application code.

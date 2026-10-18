@@ -18,6 +18,8 @@ const patientSchema = z.object({
   chronicConditions: z.string().optional(),
 });
 
+const patientUpdateSchema = patientSchema.partial();
+
 // GET /api/patients (Admin, Doctor, Receptionist)
 router.get('/', authenticateToken, requireRoles('ADMIN', 'DOCTOR', 'RECEPTIONIST'), async (req: Request, res: Response): Promise<void> => {
   try {
@@ -88,9 +90,15 @@ router.post('/', authenticateToken, requireRoles('ADMIN', 'RECEPTIONIST'), async
 
 // PUT /api/patients/:id
 router.put('/:id', authenticateToken, requireRoles('ADMIN', 'RECEPTIONIST', 'DOCTOR'), async (req: Request, res: Response): Promise<void> => {
+  const parseResult = patientUpdateSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({ error: parseResult.error.issues[0]?.message || 'Invalid patient update input' });
+    return;
+  }
+
   try {
     const { id } = req.params;
-    const updated = await dataService.updatePatient(id, req.body);
+    const updated = await dataService.updatePatient(id, parseResult.data);
     if (!updated) {
       res.status(404).json({ error: 'Patient record not found' });
       return;

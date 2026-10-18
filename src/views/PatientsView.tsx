@@ -39,6 +39,7 @@ export const PatientsView: React.FC = () => {
     contactNumber: '',
     emergencyContact: '',
     address: '',
+    pincode: '',
     allergies: '',
     chronicConditions: '',
   });
@@ -93,6 +94,7 @@ export const PatientsView: React.FC = () => {
         contactNumber: '',
         emergencyContact: '',
         address: '',
+        pincode: '',
         allergies: '',
         chronicConditions: '',
       });
@@ -327,7 +329,7 @@ export const PatientsView: React.FC = () => {
                   <input
                     type="tel"
                     required
-                    placeholder="+1-555-0100"
+                    placeholder="+91-98765-43210"
                     value={formData.contactNumber}
                     onChange={e => setFormData({ ...formData, contactNumber: e.target.value })}
                     className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
@@ -349,9 +351,20 @@ export const PatientsView: React.FC = () => {
                 <label className="block font-semibold text-slate-700 mb-1">Residential Address</label>
                 <input
                   type="text"
-                  placeholder="Street, City, Sector"
+                  placeholder="House No, Street, Area, City"
                   value={formData.address}
                   onChange={e => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Pincode</label>
+                <input
+                  type="text"
+                  placeholder="110001"
+                  value={formData.pincode}
+                  onChange={e => setFormData({ ...formData, pincode: e.target.value })}
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
                 />
               </div>

@@ -270,7 +270,7 @@ export const PrescriptionsView: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-slate-700">{m.category}</td>
                       <td className="py-3 px-4 text-slate-600">{m.dosageForm} ({m.strength})</td>
-                      <td className="py-3 px-4 font-mono font-semibold text-slate-800">${m.unitPrice.toFixed(2)}</td>
+                      <td className="py-3 px-4 font-mono font-semibold text-slate-800">₹{m.unitPrice.toFixed(2)}</td>
                       <td className="py-3 px-4 font-mono">
                         <span className={`inline-flex items-center gap-1 font-semibold ${isLowStock ? 'text-rose-700' : 'text-emerald-700'}`}>
                           {isLowStock && <AlertTriangle className="w-3.5 h-3.5" />}

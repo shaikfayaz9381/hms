@@ -17,7 +17,6 @@ import {
   Stethoscope,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { DatabaseStatusBanner } from './DatabaseStatusBanner';
 import { UserRole } from '../types';
 
 interface LayoutProps {
@@ -81,14 +80,11 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onTabChange, childre
     { role: 'ADMIN', label: 'System Administrator', desc: 'Full access to all 10 modules & audit logs' },
     { role: 'DOCTOR', label: 'Attending Doctor', desc: 'Consultations, diagnoses, prescriptions' },
     { role: 'RECEPTIONIST', label: 'Front Desk Reception', desc: 'Patient intake, scheduling, billing' },
-    { role: 'PATIENT', label: 'Arthur Pendelton (Patient)', desc: 'Personal records, prescriptions, invoices' },
+    { role: 'PATIENT', label: 'Rahul Verma (Patient)', desc: 'Personal records, prescriptions, invoices' },
   ];
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      {/* Top Database Status Indicator */}
-      <DatabaseStatusBanner />
-
       {/* Main Top Bar */}
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 lg:px-6 py-2.5 flex items-center justify-between gap-4">
         {/* Left: Mobile hamburger & Brand */}
@@ -205,9 +201,9 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onTabChange, childre
 
           {/* Sidebar Footer Info */}
           <div className="pt-4 mt-auto border-t border-slate-100 text-[11px] text-slate-400">
-            <p className="font-semibold text-slate-600">MedPulse Academic v1.0</p>
-            <p>PostgreSQL via Prisma ORM</p>
-            <p className="text-[10px] text-slate-400 mt-1">₹0 / $0 Local Stack</p>
+            <p className="font-semibold text-slate-600">MedPulse Clinical System v1.0</p>
+            <p>Secure clinical workspace</p>
+            <p className="text-[10px] text-slate-400 mt-1">Authorized personnel only</p>
           </div>
         </aside>
 

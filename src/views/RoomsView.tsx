@@ -135,7 +135,7 @@ export const RoomsView: React.FC = () => {
               <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                 <div>
                   <span className="text-[10px] text-slate-400 block">Daily Rate</span>
-                  <span className="font-mono font-bold text-teal-700">${room.dailyRate.toFixed(2)}</span>
+                  <span className="font-mono font-bold text-teal-700">₹{room.dailyRate.toFixed(2)}</span>
                 </div>
                 <div>
                   {getStatusBadge(room.status)}

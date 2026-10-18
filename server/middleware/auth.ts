@@ -54,7 +54,7 @@ export function requireRoles(...roles: string[]) {
     }
 
     if (!roles.includes(req.user.role)) {
-      dataService.logAudit(
+      void dataService.logAudit(
         req.user.id,
         'UNAUTHORIZED_ACCESS_ATTEMPT',
         req.originalUrl,
