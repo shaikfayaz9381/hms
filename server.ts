@@ -1,6 +1,8 @@
 import { app } from './server/app.js';
 import dotenv from 'dotenv';
 import path from 'path';
+import { existsSync } from 'fs';
+import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -26,9 +28,25 @@ async function startServer() {
   } else {
     // Serve static build in production
     const express = (await import('express')).default;
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    const distDir = path.resolve(__dirname, 'dist');
+    const indexHtml = path.join(distDir, 'index.html');
+
+    // Self-heal: some hosts (e.g. misconfigured Render services) only run `npm install`
+    // without a build step. If the frontend build is missing, create it once at startup
+    // so the website still works without any dashboard configuration.
+    if (!existsSync(indexHtml)) {
+      console.log('[MedPulse] Frontend build (dist/) not found — building the client once...');
+      try {
+        execSync('npx vite build', { cwd: __dirname, stdio: 'inherit' });
+        console.log('[MedPulse] Frontend build complete.');
+      } catch (err) {
+        console.error('[MedPulse] Frontend build failed:', err);
+      }
+    }
+
+    app.use(express.static(distDir));
     app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      res.sendFile(indexHtml);
     });
   }
 
