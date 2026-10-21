@@ -1,0 +1,8 @@
+# Files that must never be uploaded as deployment source.
+# Environment variables are managed in the Vercel project settings instead.
+.env
+.env.*
+!.env.example
+dist
+*.log
+.vercel
