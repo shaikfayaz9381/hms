@@ -3,6 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "regions": ["bom1"],
   "functions": {
     "api/index.js": {
       "includeFiles": "node_modules/.prisma/**"
