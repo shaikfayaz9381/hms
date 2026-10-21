@@ -7,6 +7,9 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  // "native" covers local development; "rhel-openssl-3.0.x" matches the
+  // Amazon Linux runtime used by Vercel's serverless functions.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 enum Role {

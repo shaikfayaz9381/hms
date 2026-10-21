@@ -7,7 +7,8 @@
     "dev": "tsx server.ts",
     "dev:server": "PORT=5000 tsx server/standalone.ts",
     "dev:client": "vite --port=5173 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "npm run build:api && vite build",
+    "build:api": "node scripts/build-api.mjs",
     "preview": "vite preview",
     "start": "NODE_ENV=production tsx server.ts",
     "postinstall": "prisma generate",
@@ -53,6 +54,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   }
 }
