@@ -5168,8 +5168,9 @@ var require_on_finished = __commonJS({
     }
     function isFinished(msg) {
       var socket = msg.socket;
-      if (typeof msg.finished === "boolean") {
-        return Boolean(msg.finished || socket && !socket.writable);
+      var finished = writableEnded(msg);
+      if (typeof finished === "boolean") {
+        return Boolean(finished || socket && !socket.writable);
       }
       if (typeof msg.complete === "boolean") {
         return Boolean(msg.upgrade || !socket || !socket.readable || msg.complete && !msg.readable);
@@ -5248,6 +5249,9 @@ var require_on_finished = __commonJS({
       }
       return res.runInAsyncScope.bind(res, fn, null);
     }
+    function writableEnded(res) {
+      return typeof res.writableEnded === "boolean" ? res.writableEnded : res.finished;
+    }
   }
 });
 
@@ -5270,6 +5274,12 @@ var require_read = __commonJS({
       req._body = true;
       var encoding = opts.encoding !== null ? opts.encoding : null;
       var verify = opts.verify;
+      if (verify && encoding !== null && !iconv.encodingExists(encoding)) {
+        return next(createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
+          charset: encoding.toLowerCase(),
+          type: "charset.unsupported"
+        }));
+      }
       try {
         stream = contentstream(req, debug, opts.inflate);
         length = stream.length;
@@ -5279,12 +5289,6 @@ var require_read = __commonJS({
       }
       opts.length = length;
       opts.encoding = verify ? null : encoding;
-      if (opts.encoding === null && encoding !== null && !iconv.encodingExists(encoding)) {
-        return next(createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
-          charset: encoding.toLowerCase(),
-          type: "charset.unsupported"
-        }));
-      }
       debug("read body");
       getBody(stream, opts, function(error62, body) {
         if (error62) {
@@ -5305,6 +5309,17 @@ var require_read = __commonJS({
             next(createError(400, _error));
           });
           return;
+        }
+        if (stream !== req) {
+          if (typeof req.unpipe === "function") {
+            req.unpipe(stream);
+          } else {
+            unpipe(req);
+          }
+          stream.on("error", function() {
+          });
+          destroy(stream, true);
+          req.resume();
         }
         if (verify) {
           try {
